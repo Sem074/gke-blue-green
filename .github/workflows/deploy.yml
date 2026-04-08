@@ -1,0 +1,61 @@
+name: Build and Deploy to GKE
+
+on:
+  push:
+    branches:
+      - main
+      - test
+
+env:
+  # Deze variabelen worden uit je GitHub Secrets gehaald
+  PROJECT_ID: ${{ secrets.GKE_PROJECT }}
+  
+  # Statische instellingen (check of deze namen kloppen met jouw GKE setup)
+  GKE_CLUSTER: challenge-cluster
+  GKE_ZONE: europe-west4-a
+  GAR_ZONE: europe-west4
+  GAR_REPO: app-repo
+  IMAGE: micro
+
+jobs:
+  setup-build-publish-deploy:
+    name: Setup, Build, Publish, and Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    # Authenticate via de Service Account Key uit je Secrets
+    - id: 'auth'
+      uses: 'google-github-actions/auth@v1'
+      with:
+        credentials_json: '${{ secrets.GKE_SA_KEY }}'
+
+    # Configureer Docker voor Artifact Registry
+    - name: Docker configuration
+      run: |-
+        gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://${{ env.GAR_ZONE }}-docker.pkg.dev
+
+    # Haal GKE credentials op om kubectl te kunnen gebruiken
+    - name: Set up GKE credentials
+      uses: google-github-actions/get-gke-credentials@v1
+      with:
+        cluster_name: ${{ env.GKE_CLUSTER }}
+        location: ${{ env.GKE_ZONE }}
+
+    # Bouw en Push de Docker image
+    # De tag wordt automatisch 'main' of 'test' op basis van de branch
+    - name: Build and Push
+      run: |-
+        TAG=${GITHUB_REF_NAME}
+        IMAGE_PATH="${{ env.GAR_ZONE }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.IMAGE }}:$TAG"
+        docker build -t $IMAGE_PATH .
+        docker push $IMAGE_PATH
+
+    # Deploy naar het cluster
+    # Dit voert alle .yaml bestanden uit de k8s/ map uit
+    - name: Deploy
+      run: |-
+        kubectl apply -f k8s/
+        kubectl get pods
