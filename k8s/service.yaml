@@ -9,4 +9,4 @@ spec:
     targetPort: 80
   selector:
     app: my-app
-    version: blue  # Verander naar 'green' voor de switch
+    version: green  # Verander naar 'green' voor de switch
